@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>황금 키워드 찾기</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --primary: #3b6ef6;
+    --primary-light: #eef1ff;
+    --text: #1a1d23;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --green: #16a34a;
+    --green-bg: #dcfce7;
+    --yellow: #b45309;
+    --yellow-bg: #fef3c7;
+    --red: #dc2626;
+    --red-bg: #fee2e2;
+    --shadow: 0 1px 4px rgba(0,0,0,.08);
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Pretendard', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo { font-size: 22px; font-weight: 700; color: var(--primary); }
+  .logo span { color: var(--text); font-weight: 400; font-size: 14px; margin-left: 8px; }
+
+  main { max-width: 960px; margin: 0 auto; padding: 32px 20px; }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 24px; }
+  .tab {
+    padding: 10px 24px;
+    font-size: 14px; font-weight: 500;
+    cursor: pointer; border: none; background: none;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all .15s;
+  }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+  /* Panel */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  label { font-size: 13px; font-weight: 500; color: var(--muted); display: block; margin-bottom: 6px; }
+
+  input[type=text], select, textarea {
+    width: 100%; padding: 10px 14px;
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; color: var(--text);
+    outline: none; transition: border .15s;
+  }
+  input[type=text]:focus, select:focus, textarea:focus { border-color: var(--primary); }
+  textarea { resize: vertical; min-height: 80px; }
+
+  .row { display: flex; gap: 16px; margin-bottom: 16px; }
+  .row > * { flex: 1; }
+
+  .filters {
+    display: flex; gap: 16px; margin-top: 16px;
+    padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  .filter-group { flex: 1; }
+
+  .btn {
+    width: 100%; padding: 12px;
+    background: var(--primary); color: #fff;
+    border: none; border-radius: 8px;
+    font-size: 15px; font-weight: 600;
+    cursor: pointer; margin-top: 20px;
+    transition: opacity .15s;
+  }
+  .btn:hover { opacity: .88; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Theme buttons */
+  .category-grid {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;
+  }
+  .cat-btn {
+    padding: 6px 14px; border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: var(--card); color: var(--text);
+    font-size: 13px; cursor: pointer; transition: all .15s;
+  }
+  .cat-btn.selected { border-color: var(--primary); background: var(--primary-light); color: var(--primary); font-weight: 600; }
+
+  /* Season badges */
+  .season-grid { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+  .season-card {
+    flex: 1; min-width: 100px;
+    padding: 12px 16px; border-radius: 10px;
+    border: 1.5px solid var(--border);
+    cursor: pointer; transition: all .15s; text-align: center;
+  }
+  .season-card .emoji { font-size: 22px; margin-bottom: 4px; }
+  .season-card .name { font-size: 13px; font-weight: 600; }
+  .season-card .events { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .season-card.selected { border-color: var(--primary); background: var(--primary-light); }
+  .season-card.selected .name { color: var(--primary); }
+
+  /* Results */
+  .result-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px;
+  }
+  .result-count { font-size: 14px; color: var(--muted); }
+  .result-count strong { color: var(--text); }
+
+  .btn-csv {
+    padding: 7px 16px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--card);
+    font-size: 13px; cursor: pointer; color: var(--text);
+  }
+  .btn-csv:hover { background: var(--bg); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; padding: 10px 12px;
+    background: var(--bg); color: var(--muted);
+    font-weight: 500; border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+    white-space: nowrap;
+  }
+  thead th:hover { color: var(--primary); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:hover { background: var(--bg); }
+  td { padding: 10px 12px; }
+  td:first-child { font-weight: 500; }
+
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 500;
+  }
+  .badge-low  { background: var(--green-bg); color: var(--green); }
+  .badge-mid  { background: var(--yellow-bg); color: var(--yellow); }
+  .badge-high { background: var(--red-bg); color: var(--red); }
+
+  .score { font-weight: 700; color: var(--primary); }
+
+  /* Loading */
+  .loading {
+    text-align: center; padding: 48px;
+    color: var(--muted); font-size: 14px;
+  }
+  .spinner {
+    width: 36px; height: 36px; margin: 0 auto 12px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .seeds-used {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;
+  }
+  .seed-tag {
+    padding: 3px 10px; border-radius: 20px;
+    background: var(--primary-light); color: var(--primary);
+    font-size: 12px;
+  }
+
+  .empty { text-align: center; padding: 48px; color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 600px) {
+    .row, .filters { flex-direction: column; }
+    .season-grid { gap: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🔑 황금키워드 <span>네이버 블로그 키워드 분석 도구</span></div>
+</header>
+
+<main>
+  <div class="card">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('seed')">🌱 씨앗키워드 모드</button>
+      <button class="tab" onclick="switchTab('theme')">📅 테마/날짜 모드</button>
+    </div>
+
+    <!-- 씨앗키워드 패널 -->
+    <div class="panel active" id="panel-seed">
+      <div style="margin-bottom:16px">
+        <label>씨앗 키워드 (최대 5개, 줄바꿈으로 구분)</label>
+        <textarea id="seed-input" placeholder="예시:&#10;블로그 글쓰기&#10;파이썬 독학&#10;다이어트 식단"></textarea>
+      </div>
+      <div class="filters">
+        <div class="filter-group">
+          <label>최소 월 검색량</label>
+          <select id="seed-minsearch">
+            <option value="100">100 이상</option>
+            <option value="300" selected>300 이상</option>
+            <option value="500">500 이상</option>
+            <option value="1000">1,000 이상</option>
+            <option value="3000">3,000 이상</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>최대 경쟁도</label>
+          <select id="seed-maxcomp">
+            <option value="낮음" selected>낮음만</option>
+            <option value="중간">낮음 + 중간</option>
+            <option value="높음">전체</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn" id="btn-seed" onclick="searchSeed()">🔍 황금 키워드 찾기</button>
+    </div>
+
+    <!-- 테마 패널 -->
+    <div class="panel" id="panel-theme">
+      <div style="margin-bottom:20px">
+        <label>카테고리 선택 (복수 선택 가능)</label>
+        <div class="category-grid" id="cat-grid">
+          <button class="cat-btn" onclick="toggleCat(this,'육아')">👶 육아</button>
+          <button class="cat-btn" onclick="toggleCat(this,'건강')">💪 건강</button>
+          <button class="cat-btn" onclick="toggleCat(this,'요리')">🍳 요리</button>
+          <button class="cat-btn" onclick="toggleCat(this,'여행')">✈️ 여행</button>
+          <button class="cat-btn" onclick="toggleCat(this,'재테크')">💰 재테크</button>
+          <button class="cat-btn" onclick="toggleCat(this,'뷰티')">💄 뷰티</button>
+          <button class="cat-btn" onclick="toggleCat(this,'반려동물')">🐾 반려동물</button>
+          <button class="cat-btn" onclick="toggleCat(this,'IT기기')">💻 IT기기</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <label>시즌/이벤트 선택</label>
+        <div class="season-grid" id="season-grid">
+          <div class="season-card" onclick="selectSeason(this,'봄 시즌')">
+            <div class="emoji">🌸</div>
+            <div class="name">봄</div>
+            <div class="events">입학 · 꽃놀이 · 봄맞이</div>
+          </div>
+          <div class="season-card" onclick="selectSeason(this,'여름 시즌')">
+            <div class="emoji">☀️</div>
+            <div class="name">여름</div>
+            <div class="events">방학 · 여행 · 다이어트</div>
+          </div>
+          <div class="season-card" onclick="selectSeason(this,'가을 시즌')">
+            <div class="emoji">🍂</div>
+            <div class="name">가을</div>
+            <div class="events">추석 · 단풍 · 독서</div>
+          </div>
+          <div class="season-card" onclick="selectSeason(this,'겨울 시즌')">
+            <div class="emoji">❄️</div>
+            <div class="name">겨울</div>
+            <div class="events">크리스마스 · 수능 · 연말</div>
+          </div>
+          <div class="season-card" onclick="selectSeason(this,'현재 날짜 기준 트렌드')">
+            <div class="emoji">📅</div>
+            <div class="name">오늘 기준</div>
+            <div class="events">AI가 자동 판단</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:4px">
+        <label>추가 테마 설명 (선택사항)</label>
+        <input type="text" id="theme-extra" placeholder="예: 수험생 대상, 30대 직장인, 초보자용 등">
+      </div>
+
+      <div class="filters" style="margin-top:16px">
+        <div class="filter-group">
+          <label>최소 월 검색량</label>
+          <select id="theme-minsearch">
+            <option value="100">100 이상</option>
+            <option value="300" selected>300 이상</option>
+            <option value="500">500 이상</option>
+            <option value="1000">1,000 이상</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>최대 경쟁도</label>
+          <select id="theme-maxcomp">
+            <option value="낮음">낮음만</option>
+            <option value="중간" selected>낮음 + 중간</option>
+            <option value="높음">전체</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn" id="btn-theme" onclick="searchTheme()">✨ AI 추천 키워드 찾기</button>
+    </div>
+  </div>
+
+  <!-- 결과 영역 -->
+  <div id="result-area"></div>
+</main>
+
+<script>
+let selectedCats = [];
+let selectedSeason = '';
+let sortCol = 'score';
+let sortAsc = false;
+let lastResults = [];
+
+function switchTab(t) {
+  document.querySelectorAll('.tab').forEach((el,i) => el.classList.toggle('active', (i===0&&t==='seed')||(i===1&&t==='theme')));
+  document.getElementById('panel-seed').classList.toggle('active', t==='seed');
+  document.getElementById('panel-theme').classList.toggle('active', t==='theme');
+}
+
+function toggleCat(el, cat) {
+  const idx = selectedCats.indexOf(cat);
+  if (idx > -1) { selectedCats.splice(idx,1); el.classList.remove('selected'); }
+  else { selectedCats.push(cat); el.classList.add('selected'); }
+}
+
+function selectSeason(el, season) {
+  document.querySelectorAll('.season-card').forEach(c => c.classList.remove('selected'));
+  if (selectedSeason === season) { selectedSeason = ''; }
+  else { selectedSeason = season; el.classList.add('selected'); }
+}
+
+function showLoading(msg) {
+  document.getElementById('result-area').innerHTML = `
+    <div class="card loading">
+      <div class="spinner"></div>
+      <div>${msg}</div>
+    </div>`;
+}
+
+function compBadge(c) {
+  if (c==='낮음') return `<span class="badge badge-low">낮음</span>`;
+  if (c==='중간') return `<span class="badge badge-mid">중간</span>`;
+  return `<span class="badge badge-high">높음</span>`;
+}
+
+function renderResults(data) {
+  lastResults = data.results || [];
+  const seeds = data.seeds_used || [];
+
+  if (!lastResults.length) {
+    document.getElementById('result-area').innerHTML = `<div class="card empty">😢 조건에 맞는 키워드가 없습니다. 최소 검색량을 낮추거나 경쟁도 범위를 넓혀보세요.</div>`;
+    return;
+  }
+
+  let seedsHtml = '';
+  if (seeds.length) {
+    seedsHtml = `<div class="seeds-used">${seeds.map(s=>`<span class="seed-tag">🌱 ${s}</span>`).join('')}</div>`;
+  }
+
+  const sorted = [...lastResults].sort((a,b) => {
+    const av = a[sortCol], bv = b[sortCol];
+    if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortAsc ? av - bv : bv - av;
+  });
+
+  const rows = sorted.map((r,i) => `
+    <tr>
+      <td>${i+1}. ${r.keyword}</td>
+      <td>${r.pc.toLocaleString()}</td>
+      <td>${r.mobile.toLocaleString()}</td>
+      <td><strong>${r.total.toLocaleString()}</strong></td>
+      <td>${compBadge(r.competition)}</td>
+      <td><span class="score">${r.score.toLocaleString()}</span></td>
+      <td style="color:var(--muted);font-size:12px">${r.seed||''}</td>
+    </tr>`).join('');
+
+  const arrow = col => col===sortCol ? (sortAsc?'↑':'↓') : '';
+  const th = (col,label) => `<th onclick="sortBy('${col}')">${label} ${arrow(col)}</th>`;
+
+  document.getElementById('result-area').innerHTML = `
+    <div class="card">
+      <div class="result-header">
+        <div class="result-count">총 <strong>${lastResults.length}</strong>개 황금 키워드 발견</div>
+        <button class="btn-csv" onclick="downloadCSV()">⬇ CSV 다운로드</button>
+      </div>
+      ${seedsHtml}
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            ${th('keyword','키워드')}
+            ${th('pc','PC 검색량')}
+            ${th('mobile','모바일')}
+            ${th('total','합계')}
+            ${th('competition','경쟁도')}
+            ${th('score','황금점수')}
+            <th>씨앗</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function sortBy(col) {
+  if (sortCol === col) sortAsc = !sortAsc;
+  else { sortCol = col; sortAsc = false; }
+  if (lastResults.length) renderResults({results: lastResults});
+}
+
+async function searchSeed() {
+  const raw = document.getElementById('seed-input').value.trim();
+  if (!raw) { alert('씨앗 키워드를 입력해주세요.'); return; }
+  const seeds = raw.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,5);
+  const btn = document.getElementById('btn-seed');
+  btn.disabled = true;
+  showLoading('네이버 API에서 키워드 수집 중...');
+  try {
+    const res = await fetch('/api/keywords', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        seeds,
+        min_search: +document.getElementById('seed-minsearch').value,
+        max_competition: document.getElementById('seed-maxcomp').value,
+      })
+    });
+    renderResults(await res.json());
+  } catch(e) { document.getElementById('result-area').innerHTML=`<div class="card empty">오류: ${e.message}</div>`; }
+  btn.disabled = false;
+}
+
+async function searchTheme() {
+  if (!selectedCats.length && !selectedSeason) { alert('카테고리 또는 시즌을 선택해주세요.'); return; }
+  const btn = document.getElementById('btn-theme');
+  btn.disabled = true;
+  showLoading('AI가 날짜/테마 기반 키워드를 생성하고 있습니다...');
+  try {
+    const extra = document.getElementById('theme-extra').value.trim();
+    const theme = [selectedSeason, selectedCats.join(', '), extra].filter(Boolean).join(' / ') || '일반';
+    const res = await fetch('/api/theme', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        theme,
+        category: selectedCats[0] || '',
+        min_search: +document.getElementById('theme-minsearch').value,
+        max_competition: document.getElementById('theme-maxcomp').value,
+      })
+    });
+    renderResults(await res.json());
+  } catch(e) { document.getElementById('result-area').innerHTML=`<div class="card empty">오류: ${e.message}</div>`; }
+  btn.disabled = false;
+}
+
+function downloadCSV() {
+  if (!lastResults.length) return;
+  const headers = ['키워드','PC검색량','모바일검색량','합계','경쟁도','황금점수','씨앗키워드'];
+  const rows = lastResults.map(r => [r.keyword,r.pc,r.mobile,r.total,r.competition,r.score,r.seed||''].join(','));
+  const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = `황금키워드_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+</script>
+</body>
+</html>
