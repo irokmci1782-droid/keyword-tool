@@ -10,14 +10,14 @@ import anthropic
 app = FastAPI()
 
 # ── 환경 변수 ──────────────────────────────────────────────
-NAVER_API_KEY    = os.environ.get("NAVER_API_KEY", "")
-NAVER_SECRET_KEY = os.environ.get("NAVER_SECRET_KEY", "")
-NAVER_CUSTOMER_ID= os.environ.get("NAVER_CUSTOMER_ID", "")
-ANTHROPIC_API_KEY= os.environ.get("ANTHROPIC_API_KEY", "")
+NAVER_API_KEY     = os.environ.get("NAVER_API_KEY", "")
+NAVER_SECRET_KEY  = os.environ.get("NAVER_SECRET_KEY", "")
+NAVER_CUSTOMER_ID = os.environ.get("NAVER_CUSTOMER_ID", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 BASE_URL = "https://api.searchad.naver.com"
 
-# ── Naver 서명 ──────────────────────────────────────────────
+# ── 네이버 API 서명 ─────────────────────────────────────────
 def sign(timestamp, method, path):
     msg = f"{timestamp}.{method}.{path}".encode()
     raw = hmac.new(NAVER_SECRET_KEY.encode(), msg, hashlib.sha256).digest()
@@ -32,41 +32,48 @@ def naver_headers(path, method="GET"):
         "X-Signature": sign(ts, method, path),
     }
 
-def fetch_keywords(seed: str) -> list:
+# ── 키워드 조회 (속도 개선: 예외처리 포함) ───────────────────
+def fetch_keywords(seed: str):
     path = "/keywordstool"
-    res = requests.get(
-        BASE_URL + path,
-        headers=naver_headers(path),
-        params={"hintKeywords": seed, "showDetail": 1},
-        timeout=10,
-    )
-    if res.status_code != 200:
+    try:
+        res = requests.get(
+            BASE_URL + path,
+            headers=naver_headers(path),
+            params={"hintKeywords": seed, "showDetail": 1},
+            timeout=5,
+        )
+        if res.status_code != 200:
+            return []
+        return res.json().get("keywordList", [])
+    except:
         return []
-    return res.json().get("keywordList", [])
 
 # ── 점수 계산 ──────────────────────────────────────────────
 COMP = {"낮음": 1, "중간": 2, "높음": 3}
 COMP_ALLOW = {
-    "낮음":  {"낮음"},
-    "중간":  {"낮음", "중간"},
-    "높음":  {"낮음", "중간", "높음"},
+    "낮음": {"낮음"},
+    "중간": {"낮음", "중간"},
+    "높음": {"낮음", "중간", "높음"},
 }
 
 def to_int(v):
     return v if isinstance(v, int) else 0
 
 def score_kw(kw, min_search, max_comp):
-    pc   = to_int(kw.get("monthlyPcQcCnt", 0))
-    mo   = to_int(kw.get("monthlyMobileQcCnt", 0))
-    total= pc + mo
+    pc = to_int(kw.get("monthlyPcQcCnt", 0))
+    mo = to_int(kw.get("monthlyMobileQcCnt", 0))
+    total = pc + mo
     comp = kw.get("compIdx", "높음")
 
     if total < min_search or comp not in COMP_ALLOW.get(max_comp, {"낮음"}):
         return None
 
     score = round(total / COMP.get(comp, 3), 1)
+
     return {
         "keyword": kw.get("relKeyword", ""),
+        "pc": pc,
+        "mobile": mo,
         "total": total,
         "competition": comp,
         "score": score,
@@ -89,12 +96,14 @@ class SeedRequest(BaseModel):
 @app.post("/api/keywords")
 def keyword_search(req: SeedRequest):
     results = []
+
     for seed in req.seeds[:5]:
         for kw in fetch_keywords(seed):
             r = score_kw(kw, req.min_search, req.max_competition)
             if r:
                 r["seed"] = seed
                 results.append(r)
+
     results.sort(key=lambda x: x["score"], reverse=True)
     return {"results": dedup(results)[:60]}
 
@@ -127,39 +136,51 @@ def theme_search(req: ThemeRequest):
     month = today.month
     season = next((v for k,v in SEASON.items() if month in k), "")
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    cat_hint = f"\n카테고리: {req.category}" if req.category else ""
+    seeds = []
 
-    prompt = f"""
+    # ── Claude 호출 (실패해도 서비스 유지) ───────────────────
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        cat_hint = f"\n카테고리: {req.category}" if req.category else ""
+
+        prompt = f"""
 오늘: {today.strftime('%Y-%m-%d')} ({season})
 테마: {req.theme}{cat_hint}
 
 조건:
-- 블로그/쇼츠에서 잘 먹히는 키워드
 - 검색량 있는 키워드
-- 트렌드 반영
+- 블로그/쇼츠 활용 가능
+- 시즌 반영
 
-반드시 JSON만 출력:
+JSON만 출력:
 {{ "keywords": ["키워드1","키워드2","키워드3"] }}
 """
 
-    msg = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=300,
-        messages=[{"role":"user","content":prompt}]
-    )
+        msg = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=300,
+            messages=[{"role":"user","content":prompt}]
+        )
 
-    text = msg.content[0].text.strip()
+        text = msg.content[0].text.strip()
 
-    try:
-        seeds = json.loads(text).get("keywords", [])
+        try:
+            seeds = json.loads(text).get("keywords", [])
+        except:
+            seeds = []
+
     except:
         seeds = []
 
+    # ── 카테고리 보완 (AI 실패 대비) ─────────────────────────
     if req.category in CATEGORY_SEEDS:
         seeds += CATEGORY_SEEDS[req.category]
 
+    if not seeds:
+        seeds = ["다이어트", "건강", "부업"]  # fallback
+
     results = []
+
     for seed in seeds[:10]:
         for kw in fetch_keywords(seed):
             r = score_kw(kw, req.min_search, req.max_competition)
@@ -168,7 +189,11 @@ def theme_search(req: ThemeRequest):
                 results.append(r)
 
     results.sort(key=lambda x: x["score"], reverse=True)
-    return {"results": dedup(results)[:50]}
+
+    return {
+        "results": dedup(results)[:60],
+        "seeds_used": seeds
+    }
 
 # ── 정적 페이지 ────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="static"), name="static")
