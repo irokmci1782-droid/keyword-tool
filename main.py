@@ -32,7 +32,7 @@ def naver_headers(path, method="GET"):
         "X-Signature": sign(ts, method, path),
     }
 
-# ── 키워드 조회 (속도 개선: 예외처리 포함) ───────────────────
+# ── 키워드 조회 ────────────────────────────────────────────
 def fetch_keywords(seed: str):
     path = "/keywordstool"
     try:
@@ -48,30 +48,55 @@ def fetch_keywords(seed: str):
     except:
         return []
 
+# ── 필터 & 블로그 패턴 ─────────────────────────────────────
+FILTER_WORDS = [
+    "주가","시세","환율","지수","ETF","종목",
+    "코스피","나스닥","S&P","금리","선물",
+    "차트","실시간","가격"
+]
+
+BLOG_PATTERNS = [
+    "방법","추천","후기","정리","꿀팁","비교",
+    "TOP","순위","리뷰","가이드","신청","조건"
+]
+
+# ── 씨앗 확장 ─────────────────────────────────────────────
+def expand_seed(seed):
+    base = [
+        "방법","추천","후기","정리","꿀팁",
+        "비용","조건","신청","총정리"
+    ]
+    return [f"{seed} {b}" for b in base]
+
 # ── 점수 계산 ──────────────────────────────────────────────
 COMP = {"낮음": 1, "중간": 2, "높음": 3}
-COMP_ALLOW = {
-    "낮음": {"낮음"},
-    "중간": {"낮음", "중간"},
-    "높음": {"낮음", "중간", "높음"},
-}
 
 def to_int(v):
     return v if isinstance(v, int) else 0
 
 def score_kw(kw, min_search, max_comp):
+    keyword = kw.get("relKeyword", "")
+
+    # 조회형 제거
+    if any(f in keyword for f in FILTER_WORDS):
+        return None
+
     pc = to_int(kw.get("monthlyPcQcCnt", 0))
     mo = to_int(kw.get("monthlyMobileQcCnt", 0))
     total = pc + mo
     comp = kw.get("compIdx", "높음")
 
-    if total < min_search or comp not in COMP_ALLOW.get(max_comp, {"낮음"}):
+    # 최소 검색량 완화
+    if total < 30:
         return None
 
-    score = round(total / COMP.get(comp, 3), 1)
+    # 블로그형 가중치
+    blog_score = 1.5 if any(p in keyword for p in BLOG_PATTERNS) else 1
+
+    score = round((total / COMP.get(comp, 3)) * blog_score, 1)
 
     return {
-        "keyword": kw.get("relKeyword", ""),
+        "keyword": keyword,
         "pc": pc,
         "mobile": mo,
         "total": total,
@@ -90,14 +115,19 @@ def dedup(items):
 # ── 씨앗 키워드 모드 ────────────────────────────────────────
 class SeedRequest(BaseModel):
     seeds: list[str]
-    min_search: int = 300
-    max_competition: str = "낮음"
+    min_search: int = 100
+    max_competition: str = "중간"
 
 @app.post("/api/keywords")
 def keyword_search(req: SeedRequest):
     results = []
 
-    for seed in req.seeds[:5]:
+    expanded = []
+    for seed in req.seeds:
+        expanded.append(seed)
+        expanded += expand_seed(seed)
+
+    for seed in expanded[:20]:
         for kw in fetch_keywords(seed):
             r = score_kw(kw, req.min_search, req.max_competition)
             if r:
@@ -115,19 +145,19 @@ SEASON = {
 
 CATEGORY_SEEDS = {
     "육아": ["아기","유아","어린이"],
-    "건강": ["건강","다이어트","운동"],
-    "요리": ["요리","레시피","음식"],
-    "여행": ["여행","국내여행","여행지"],
-    "재테크": ["재테크","투자","부업"],
-    "뷰티": ["뷰티","화장품","스킨케어"],
-    "반려동물":["강아지","고양이","반려동물"],
-    "IT기기":["스마트폰","노트북","IT"],
+    "건강": ["건강관리","다이어트","운동"],
+    "요리": ["레시피","요리방법","집밥"],
+    "여행": ["국내여행","여행코스","맛집"],
+    "재테크": ["부업","절약","지원금"],
+    "뷰티": ["스킨케어","화장품","관리법"],
+    "반려동물":["강아지","고양이","관리"],
+    "IT기기":["노트북","스마트폰","추천"],
 }
 
 class ThemeRequest(BaseModel):
     theme: str
     category: str = ""
-    min_search: int = 300
+    min_search: int = 100
     max_competition: str = "중간"
 
 @app.post("/api/theme")
@@ -138,19 +168,18 @@ def theme_search(req: ThemeRequest):
 
     seeds = []
 
-    # ── Claude 호출 (실패해도 서비스 유지) ───────────────────
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        cat_hint = f"\n카테고리: {req.category}" if req.category else ""
 
         prompt = f"""
 오늘: {today.strftime('%Y-%m-%d')} ({season})
-테마: {req.theme}{cat_hint}
+테마: {req.theme}
 
 조건:
-- 검색량 있는 키워드
-- 블로그/쇼츠 활용 가능
-- 시즌 반영
+- 블로그 글 작성용 키워드
+- 실생활 / 복지 / 꿀팁 중심
+- 수익화 가능 키워드
+- 조회형 키워드 금지
 
 JSON만 출력:
 {{ "keywords": ["키워드1","키워드2","키워드3"] }}
@@ -172,16 +201,21 @@ JSON만 출력:
     except:
         seeds = []
 
-    # ── 카테고리 보완 (AI 실패 대비) ─────────────────────────
+    # 카테고리 보완
     if req.category in CATEGORY_SEEDS:
         seeds += CATEGORY_SEEDS[req.category]
 
     if not seeds:
-        seeds = ["다이어트", "건강", "부업"]  # fallback
+        seeds = ["지원금", "부업", "절약"]
 
     results = []
 
-    for seed in seeds[:10]:
+    expanded = []
+    for s in seeds:
+        expanded.append(s)
+        expanded += expand_seed(s)
+
+    for seed in expanded[:20]:
         for kw in fetch_keywords(seed):
             r = score_kw(kw, req.min_search, req.max_competition)
             if r:
